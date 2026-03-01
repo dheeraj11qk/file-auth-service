@@ -1,0 +1,57 @@
+package main
+
+import (
+	"context"
+	"os"
+	"strconv"
+	"time"
+
+	"auth-service/internal/db"
+	"auth-service/internal/handler"
+	"auth-service/internal/models"
+	"auth-service/internal/observability"
+	"auth-service/internal/repository"
+	"auth-service/internal/service"
+	"auth-service/pkg/jwt"
+
+	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+)
+
+func main() {
+
+	// 1️⃣ Init Tracer FIRST
+	shutdown := observability.InitTracer("auth-service")
+	defer shutdown(context.Background())
+
+	// Init DB
+	db.InitDB()
+
+	// Auto migrate
+	db.DB.AutoMigrate(&models.User{})
+
+	// Setup layers
+	repo := repository.NewUserRepository(db.DB)
+
+	expireHours, _ := strconv.Atoi(os.Getenv("JWT_EXPIRE_HOURS"))
+
+	jwtManager := jwt.New(
+		os.Getenv("JWT_SECRET"),
+		time.Duration(expireHours)*time.Hour,
+	)
+	authService := service.NewAuthService(repo, jwtManager)
+	authHandler := handler.NewAuthHandler(authService)
+
+	// Gin
+	r := gin.Default()
+
+	// 4️⃣ Add OTEL middleware
+	r.Use(otelgin.Middleware("auth-service"))
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	r.POST("/register", authHandler.Register)
+	r.POST("/login", authHandler.Login)
+
+	r.Run(":8080")
+}
