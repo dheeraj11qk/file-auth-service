@@ -52,6 +52,12 @@ func main() {
 
 	r.POST("/register", authHandler.Register)
 	r.POST("/login", authHandler.Login)
+	r.GET("/health", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{
+			"status":  "ok",
+			"service": "auth-service",
+		})
+	})
 
 	r.Run(":8080")
 }
