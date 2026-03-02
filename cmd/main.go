@@ -34,12 +34,26 @@ func main() {
 	// Setup layers
 	repo := repository.NewUserRepository(db.DB)
 
-	expireHours, _ := strconv.Atoi(os.Getenv("JWT_EXPIRE_HOURS"))
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		panic("JWT_SECRET is not set")
+	}
+
+	expireStr := os.Getenv("JWT_EXPIRE_HOURS")
+	if expireStr == "" {
+		panic("JWT_EXPIRE_HOURS is not set")
+	}
+
+	expireHours, err := strconv.Atoi(expireStr)
+	if err != nil {
+		panic("Invalid JWT_EXPIRE_HOURS value")
+	}
 
 	jwtManager := jwt.New(
-		os.Getenv("JWT_SECRET"),
+		secret,
 		time.Duration(expireHours)*time.Hour,
 	)
+
 	authService := service.NewAuthService(repo, jwtManager)
 	authHandler := handler.NewAuthHandler(authService)
 
