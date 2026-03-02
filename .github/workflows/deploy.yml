@@ -13,18 +13,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/key.pem
-          chmod 600 ~/.ssh/key.pem
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          aws ecr get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin 172786533719.dkr.ecr.eu-north-1.amazonaws.com
+
+      - name: Build and Push Docker Image
+        run: |
+          docker buildx build --platform linux/amd64 \
+          -t 172786533719.dkr.ecr.eu-north-1.amazonaws.com/auth-service:latest \
+          --push .
 
       - name: Deploy to EC2
-        run: |
-          ssh -i ~/.ssh/key.pem ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            cd ~/file-auth-service
-            git pull origin main
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull 172786533719.dkr.ecr.eu-north-1.amazonaws.com/auth-service:latest
             docker-compose down
-            docker-compose up -d --build
-          EOF
+            docker-compose up -d
